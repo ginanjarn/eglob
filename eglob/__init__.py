@@ -224,25 +224,40 @@ class FileSegment(SegmentPattern):
 
 
 def glob1(root_path: str, segments: List[SegmentPattern]):
-    """glob with defined path and patterns"""
+    """glob with defined path and patterns
+
+    Limitation:
+    `**` pattern cannot be nested
+    Exp: 
+        **/*.py         ( ok )
+        **/coo/**/*.py  ( unexpected result! )
+    """
+
+    def walk_directory(name: str):
+        if not isinstance(segments[0], DirectorySegment):
+            raise ValueError("segments must start with <class 'DirectorySegment'>")
+
+        path = os.path.join(root_path, name)
+        if segments[0].pattern == "**":
+            yield from glob1(path, segments)
+        elif segments[0].match(name):
+            yield from glob1(path, segments[1:])
+
+    def match_file(name: str):
+        # match any subpattern ('**/<any_characters>')
+        if isinstance(segments[0], DirectorySegment) and segments[0].pattern == "**":
+            return segments[1].match(name)
+
+        # match file segment
+        return segments[0].match(name)
 
     for name in os.listdir(root_path):
         absolute_path = os.path.join(root_path, name)
-
-        # match directory segment
-        if isinstance(segments[0], DirectorySegment):
-            if os.path.isdir(absolute_path):
-                if segments[0].match(name):
-                    yield from glob1(absolute_path, segments[1:])
-            else:
-                # match any subpattern ('**/(any_chars)')
-                if segments[0].pattern == "**" and segments[1].match(name):
-                    yield absolute_path
-            continue
-
-        # match file segment
-        if os.path.isfile(absolute_path) and segments[0].match(name):
-            yield absolute_path
+        if os.path.isdir(absolute_path):
+            yield from walk_directory(name)
+        else:
+            if match_file(name):
+                yield absolute_path
 
 
 def iglob(pattern: str, cwd: Optional[str] = None) -> Iterator[str]:
